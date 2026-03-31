@@ -1,0 +1,260 @@
+{% extends "Master/MenuTemplate.html.twig" %}
+
+{% block css %}
+    {{ parent() }}
+    <style>
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background-color: #f8f9fa;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+            background-color: #e9f7fe;
+        }
+        .upload-area.dragover {
+            border-color: #28a745;
+            background-color: #e8f5e9;
+        }
+        .file-info {
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+        .instructions {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 font-weight-bold text-primary">{{ fsc.title }}</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="instructions">
+                            <h6><i class="fas fa-info-circle"></i> Instrucciones:</h6>
+                            <ol class="mb-0">
+                                <li>Exporta el informe de pedidos desde Amazon Seller Central en formato TSV</li>
+                                <li>Selecciona el archivo usando el botón de abajo</li>
+                                <li>Elige el modo de importación (añadir nuevas o actualizar existentes)</li>
+                                <li>Haz clic en Importar para procesar los pedidos</li>
+                            </ol>
+                        </div>
+
+                        <form action="{{ fsc.url() }}" method="post" enctype="multipart/form-data" id="uploadForm">
+                            {{ formToken()|raw }}
+                            
+                            <div class="form-group">
+                                <label for="amazonfile" class="font-weight-bold">Archivo TSV de Amazon</label>
+                                <div class="upload-area" id="uploadArea">
+                                    <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                                    <p class="mb-2">Arrastra y suelta tu archivo aquí o</p>
+                                    <button type="button" class="btn btn-primary" id="browseButton">
+                                        <i class="fas fa-folder-open"></i> Seleccionar archivo
+                                    </button>
+                                    <input type="file" class="d-none" id="amazonfile" name="amazonfile" accept=".tsv,.txt" required>
+                                    <div class="file-info" id="fileInfo">
+                                        <p class="mb-1">Formatos aceptados: .tsv, .txt</p>
+                                        <p class="mb-0">Tamaño máximo: <span id="maxUploadSize">2MB</span></p>
+                                    </div>
+                                </div>
+                                <small class="form-text text-muted mt-2">
+                                    El archivo debe ser un TSV (Tab Separated Values) exportado desde Amazon Seller Central.
+                                </small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="mode" class="font-weight-bold">Modo de importación</label>
+                                <select class="form-control" id="mode" name="mode" required>
+                                    <option value="add" selected>Añadir solo pedidos nuevos</option>
+                                    <option value="update">Actualizar pedidos existentes</option>
+                                </select>
+                                <small class="form-text text-muted">
+                                    <strong>Añadir nuevo:</strong> Solo importa pedidos que no existen en el sistema.<br>
+                                    <strong>Actualizar:</strong> Actualiza pedidos existentes y añade los nuevos.
+                                </small>
+                            </div>
+
+                            <button type="submit" class="btn btn-success btn-lg btn-block" id="submitBtn">
+                                <i class="fas fa-upload"></i> Importar pedidos de Amazon
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-question-circle"></i> Ayuda</h6>
+                    </div>
+                    <div class="card-body">
+                        <h6>¿Cómo exportar desde Amazon?</h6>
+                        <ol>
+                            <li>Accede a Amazon Seller Central</li>
+                            <li>Ve a Informes → Informes de negocio</li>
+                            <li>Selecciona "Informe de ventas de Amazon"</li>
+                            <li>Configura el período deseado</li>
+                            <li>Descarga en formato TSV</li>
+                        </ol>
+                        
+                        <h6 class="mt-4">Campos requeridos en el archivo</h6>
+                        <ul>
+                            <li>order-id (ID del pedido)</li>
+                            <li>purchase-date (Fecha de compra)</li>
+                            <li>buyer-email (Email del comprador)</li>
+                            <li>buyer-name (Nombre del comprador)</li>
+                            <li>sku (SKU del producto)</li>
+                            <li>product-name (Nombre del producto)</li>
+                            <li>quantity-purchased (Cantidad)</li>
+                            <li>item-price (Precio del artículo)</li>
+                            <li>item-tax (Impuesto del artículo)</li>
+                        </ul>
+                        
+                        <div class="alert alert-info mt-3">
+                            <i class="fas fa-lightbulb"></i> <strong>Consejo:</strong> Los clientes se crearán automáticamente si no existen en el sistema.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('amazonfile');
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInfo = document.getElementById('fileInfo');
+            const submitBtn = document.getElementById('submitBtn');
+            const form = document.getElementById('uploadForm');
+            const maxUploadSizeEl = document.getElementById('maxUploadSize');
+            const browseButton = document.getElementById('browseButton');
+            
+            // Obtener tamaño máximo de subida
+            fetch('{{ fsc.url() }}?action=get-max-upload')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.maxUpload) {
+                        maxUploadSizeEl.textContent = data.maxUpload + ' MB';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error al obtener tamaño máximo:', error);
+                });
+            
+            // Drag and drop
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                uploadArea.addEventListener(eventName, preventDefaults, false);
+            });
+            
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            ['dragenter', 'dragover'].forEach(eventName => {
+                uploadArea.addEventListener(eventName, highlight, false);
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                uploadArea.addEventListener(eventName, unhighlight, false);
+            });
+            
+            function highlight() {
+                uploadArea.classList.add('dragover');
+            }
+            
+            function unhighlight() {
+                uploadArea.classList.remove('dragover');
+            }
+            
+            uploadArea.addEventListener('drop', handleDrop, false);
+            
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                fileInput.files = files;
+                updateFileInfo(files[0]);
+            }
+            
+            // Click en el botón de búsqueda
+            browseButton.addEventListener('click', function(e) {
+                e.stopPropagation(); // Evitar que el click se propague al área de subida
+                fileInput.click();
+            });
+            
+            // Click en el área de subida (solo si no se hizo click en el botón)
+            uploadArea.addEventListener('click', function(e) {
+                if (e.target !== browseButton && !browseButton.contains(e.target)) {
+                    fileInput.click();
+                }
+            });
+            
+            // Cambio en el input de archivo
+            fileInput.addEventListener('change', function() {
+                if (this.files.length) {
+                    updateFileInfo(this.files[0]);
+                }
+            });
+            
+            function updateFileInfo(file) {
+                const fileSize = (file.size / (1024 * 1024)).toFixed(2);
+                fileInfo.innerHTML = `
+                    <p class="mb-1"><strong>Archivo seleccionado:</strong> ${file.name}</p>
+                    <p class="mb-0"><strong>Tamaño:</strong> ${fileSize} MB</p>
+                `;
+                uploadArea.style.borderColor = '#28a745';
+            }
+            
+            // Validación del formulario
+            form.addEventListener('submit', function(e) {
+                if (!fileInput.files.length) {
+                    e.preventDefault();
+                    alert('Por favor selecciona un archivo TSV de Amazon.');
+                    return false;
+                }
+                
+                const file = fileInput.files[0];
+                const maxSizeMB = parseFloat(maxUploadSizeEl.textContent);
+                const maxSizeBytes = maxSizeMB * 1024 * 1024;
+                
+                if (file.size > maxSizeBytes) {
+                    e.preventDefault();
+                    alert(`El archivo es demasiado grande. Tamaño máximo: ${maxSizeMB} MB`);
+                    return false;
+                }
+                
+                // Validar extensión
+                const validExtensions = ['.tsv', '.txt'];
+                const fileName = file.name.toLowerCase();
+                const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
+                
+                if (!hasValidExtension) {
+                    e.preventDefault();
+                    alert('Formato de archivo no válido. Solo se aceptan archivos .tsv o .txt');
+                    return false;
+                }
+                
+                // Mostrar indicador de carga
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+                
+                return true;
+            });
+        });
+    </script>
+{% endblock %}

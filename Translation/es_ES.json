@@ -1,0 +1,22 @@
+{
+    "amazon-import": "Importación Amazon",
+    "import-amazon-orders": "Importar pedidos de Amazon",
+    "select-tsv-file": "Selecciona archivo TSV",
+    "import-mode": "Modo de importación",
+    "add-new-only": "Añadir solo nuevos",
+    "update-existing": "Actualizar existentes",
+    "import-button": "Importar pedidos",
+    "file-too-large": "Archivo demasiado grande",
+    "invalid-file-type": "Tipo de archivo no válido",
+    "processing": "Procesando...",
+    "import-success": "Importación completada",
+    "import-error": "Error en la importación",
+    "drag-drop-file": "Arrastra y suelta tu archivo aquí",
+    "browse-files": "Examinar archivos",
+    "max-file-size": "Tamaño máximo",
+    "required-fields": "Campos requeridos",
+    "how-to-export": "Cómo exportar desde Amazon",
+    "help": "Ayuda",
+    "tip": "Consejo",
+    "customers-created": "Clientes creados automáticamente"
+}
