@@ -83,7 +83,17 @@ class AmazonRow
 
     public function getNetPriceTotal(): float
     {
-        return $this->getTotalPrice() - $this->getTaxAmount();
+        $totalPrice = $this->getTotalPrice();
+        $taxAmount = $this->getTaxAmount();
+        
+        // Si hay impuesto reportado, restarlo
+        if ($taxAmount > 0) {
+            return $totalPrice - $taxAmount;
+        }
+        
+        // Si no hay impuesto reportado, asumir IVA 21% incluido
+        // Calcular precio neto: precio_total / 1.21
+        return $totalPrice / 1.21;
     }
 
     public function getUnitPriceNet(): float
@@ -94,9 +104,17 @@ class AmazonRow
 
     public function getVatPercent(): float
     {
-        $net = $this->getNetPriceTotal();
         $tax = $this->getTaxAmount();
-        return ($tax > 0 && $net > 0) ? round(($tax / $net) * 100) : 0;
+        
+        // Si hay impuesto reportado, calcular porcentaje
+        if ($tax > 0) {
+            $net = $this->getNetPriceTotal();
+            return ($net > 0) ? round(($tax / $net) * 100) : 0;
+        }
+        
+        // Si no hay impuesto reportado, asumir IVA 21% incluido en el precio
+        // (caso común en reportes de Amazon donde el IVA no está desglosado)
+        return 21.0;
     }
 
     public function getShippingPrice(): float

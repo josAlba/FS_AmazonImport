@@ -39,12 +39,12 @@
 
 ### 1. **Descargar plugin**
 ```bash
-# Usar la versión más reciente (v5)
-AmazonImport-fixed-v5.zip
+# Usar la versión más reciente (v7)
+AmazonImport-fixed-v7.zip
 ```
 
 ### 2. **Instalar en FacturaScripts**
-1. Extraer `AmazonImport-fixed-v5.zip` en `plugins/` de FacturaScripts
+1. Extraer `AmazonImport-fixed-v7.zip` en `plugins/` de FacturaScripts
 2. Acceder al panel de administración de FacturaScripts
 3. Habilitar el plugin **AmazonImport**
 4. El plugin aparecerá en el menú principal
@@ -167,7 +167,7 @@ Calculator::calculate($factura, $lineas, true);
 
 ---
 
-## 🐛 Correcciones Incluidas (v5)
+## 🐛 Correcciones Incluidas (v7)
 
 ### **✅ Problemas Resueltos**
 | # | Problema | Solución |
@@ -178,6 +178,8 @@ Calculator::calculate($factura, $lineas, true);
 | 4 | Error "Method getNeto does not exist" | Usa Calculator::calculate() |
 | 5 | Error "Fecha no válida" | Fechas secuenciales automáticas |
 | 6 | No se identifica pedidos existentes | **ID Amazon como código de factura** |
+| 7 | Productos sin IVA visible | Asigna codimpuesto basado en porcentaje de IVA |
+| 8 | **IVA 0% cuando Amazon no desglosa impuestos** | **Asume IVA 21% incluido en precio** |
 
 ### **📅 Manejo de fechas**
 ```php
@@ -186,6 +188,36 @@ Calculator::calculate($factura, $lineas, true);
 2. Usa fechas secuenciales
 3. Última fecha + 1 minuto para cada factura
 4. Mantiene secuencia temporal correcta
+```
+
+### **💰 Corrección de IVA (v7)**
+```php
+// Problema 1: Productos no mostraban IVA correctamente
+// Solución: Asigna codimpuesto basado en porcentaje de IVA
+
+1. Busca impuesto por porcentaje (21%, 10%, 4%, 0%)
+2. Si no existe, usa código por defecto según porcentaje
+3. Asigna codimpuesto a productos y líneas de factura
+4. Compatible con Prestashop plugin
+
+// Códigos de impuesto comunes:
+- 21% → IVA21
+- 10% → IVA10  
+- 4% → IVA4
+- 0% → IVA0
+
+// Problema 2: Amazon no desglosa IVA (item-tax = 0)
+// Solución: Asume IVA 21% incluido en precio
+
+1. Si item-tax > 0: calcular IVA normal
+2. Si item-tax = 0: asumir IVA 21% incluido
+3. Calcular precio neto: precio_total / 1.21
+4. Aplicar a productos, envíos y gift wrap
+
+// Ejemplo:
+- Precio Amazon: 121€ (con IVA 21% incluido)
+- Precio neto: 100€
+- IVA: 21€ (21%)
 ```
 
 ---
@@ -203,10 +235,12 @@ Calculator::calculate($factura, $lineas, true);
 ### **Facturas creadas incluyen:**
 - ✅ Código único (ID Amazon)
 - ✅ Cliente con todos los datos
-- ✅ Líneas de productos con IVA
-- ✅ Costes adicionales (envío, gift wrap)
+- ✅ Líneas de productos con IVA **y codimpuesto** correctos (v7)
+- ✅ Costes adicionales (envío, gift wrap) con IVA correcto
 - ✅ Totales calculados correctamente
 - ✅ Fecha secuencial válida
+- ✅ **Productos con codimpuesto asignado** (v7)
+- ✅ **IVA 21% cuando Amazon no desglosa impuestos** (v7)
 
 ---
 
@@ -240,15 +274,17 @@ SELECT * FROM facturascli WHERE observaciones LIKE 'Amazon Order:%';
 | **Botón no funciona** | Conflicto JavaScript | v5 tiene eventos corregidos |
 | **"Fecha no válida"** | Secuencia incorrecta | v5 ordena por fecha |
 | **Duplicados** | Re-importación sin control | v5 usa ID Amazon como código único |
+| **Productos sin IVA** | Falta codimpuesto | v6 asigna codimpuesto automáticamente |
+| **IVA 0% incorrecto** | Amazon no desglosa impuestos | **v7 asume IVA 21% incluido** |
 
 ### **Verificar instalación:**
 ```bash
 # Estructura correcta del plugin:
 AmazonImport/
 ├── Controller/AmazonImport.php
-├── Lib/AmazonImportService.php      # ✅ v5 con todas las correcciones
+├── Lib/AmazonImportService.php      # ✅ v7 con corrección de IVA incluido
 ├── View/AmazonImport.html.twig
-├── Model/AmazonRow.php
+├── Model/AmazonRow.php              # ✅ v7 con lógica IVA 21% incluido
 └── facturascripts.ini
 ```
 
@@ -282,12 +318,14 @@ AmazonImport/
 | v2 | + Formulario/Botón | ⚠️ Obsoleto |
 | v3 | + Calculator | ⚠️ Obsoleto |
 | v4 | + Fechas secuenciales | ✅ Bueno |
-| **v5** | **+ ID Amazon como código** | **⭐ RECOMENDADO** |
+| v5 | + ID Amazon como código | ✅ Bueno |
+| v6 | + Corrección de IVA (codimpuesto) | ✅ Bueno |
+| **v7** | **+ IVA 21% cuando Amazon no desglosa** | **⭐ RECOMENDADO** |
 
-### **Actualizar a v5:**
+### **Actualizar a v7:**
 1. Deshabilitar versión anterior
 2. Eliminar carpeta `AmazonImport/` antigua
-3. Extraer `AmazonImport-fixed-v5.zip`
+3. Extraer `AmazonImport-fixed-v7.zip`
 4. Habilitar plugin nuevamente
 
 ---
@@ -300,7 +338,7 @@ AmazonImport/
 - `test_amazon_code.php` - Script de verificación
 
 ### **Para problemas:**
-1. Verificar que usas **v5** (`AmazonImport-fixed-v5.zip`)
+1. Verificar que usas **v7** (`AmazonImport-fixed-v7.zip`)
 2. Revisar formato del archivo TSV
 3. Comprobar logs de FacturaScripts
 4. Probar con archivo pequeño primero
@@ -309,19 +347,21 @@ AmazonImport/
 
 ## 🎉 ¡Listo para usar!
 
-**AmazonImport v5** incluye todas las correcciones necesarias para importar pedidos de Amazon a FacturaScripts de manera confiable y eficiente.
+**AmazonImport v7** incluye todas las correcciones necesarias para importar pedidos de Amazon a FacturaScripts de manera confiable y eficiente.
 
 ```bash
 # Archivo final recomendado:
-AmazonImport-fixed-v5.zip
+AmazonImport-fixed-v7.zip
 
-# Contiene 6 correcciones completas:
+# Contiene 8 correcciones completas:
 ✅ Campos obligatorios
 ✅ Tokens CSRF  
 ✅ Botón funcional
 ✅ Calculator para totales
 ✅ Fechas secuenciales
 ✅ ID Amazon como código único
+✅ Corrección de IVA (codimpuesto)
+✅ **IVA 21% cuando Amazon no desglosa** - v7
 ```
 
 **¡Importa tus pedidos de Amazon y gestiona tus facturas automáticamente!** 🚀
@@ -329,5 +369,5 @@ AmazonImport-fixed-v5.zip
 ---
 
 *Última actualización: 31 de marzo de 2026*  
-*Versión: AmazonImport-fixed-v5*  
+*Versión: AmazonImport-fixed-v7*  
 *Compatibilidad: FacturaScripts 2025.x*

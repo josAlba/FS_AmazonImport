@@ -7,6 +7,7 @@ use FacturaScripts\Dinamic\Model\FacturaCliente;
 use FacturaScripts\Dinamic\Model\Cliente;
 use FacturaScripts\Dinamic\Model\Producto;
 use FacturaScripts\Dinamic\Model\LineaFacturaCliente;
+use FacturaScripts\Dinamic\Model\Impuesto;
 use FacturaScripts\Core\Base\DataBase\DataBaseWhere;
 use FacturaScripts\Dinamic\Lib\BusinessDocumentCode;
 use FacturaScripts\Core\Lib\Calculator;
@@ -248,6 +249,7 @@ class AmazonImportService
         $line->cantidad = $qty;
         $line->pvpunitario = $pvpUnitario;
         $line->iva = $ivaPercent;
+        $line->codimpuesto = $this->getTaxCodeFromPercentage($ivaPercent);
         $line->save();
     }
 
@@ -259,6 +261,7 @@ class AmazonImportService
             $product->descripcion = $name;
             $product->pvp = $netPrice * (1 + ($ivaPercent / 100));
             $product->stock = $qty;
+            $product->codimpuesto = $this->getTaxCodeFromPercentage($ivaPercent);
             $product->save();
         } elseif ($product->referencia && $product->stock < $qty) {
             $product->stock = $qty;
@@ -290,14 +293,23 @@ class AmazonImportService
 
     protected function createExtraLine(FacturaCliente $inv, string $ref, string $desc, array $costData)
     {
-        $net = $costData['price'] - $costData['tax'];
+        $price = $costData['price'];
+        $tax = $costData['tax'];
+        
+        // Calcular precio neto
+        $net = ($tax > 0) ? $price - $tax : $price / 1.21;
+        
+        // Calcular porcentaje de IVA
+        $ivaPercent = ($tax > 0 && $net > 0) ? round(($tax / $net) * 100) : 21.0;
+        
         $line = new LineaFacturaCliente();
         $line->idfactura = $inv->idfactura;
         $line->referencia = $ref;
         $line->descripcion = $desc;
         $line->cantidad = 1;
         $line->pvpunitario = $net;
-        $line->iva = ($costData['price'] > $costData['tax'] && $net > 0) ? round(($costData['tax'] / $net) * 100) : 0;
+        $line->iva = $ivaPercent;
+        $line->codimpuesto = $this->getTaxCodeFromPercentage($ivaPercent);
         $line->save();
     }
 
@@ -326,6 +338,39 @@ class AmazonImportService
         $cliente->cifnif = 'VARIOUS';
         $cliente->save();
         return $cliente->codcliente;
+    }
+
+    protected function getTaxCodeFromPercentage(float $ivaPercent): string
+    {
+        $impuesto = new Impuesto();
+        $where = [new DataBaseWhere('iva', $ivaPercent)];
+        $taxes = $impuesto->all($where, ['codimpuesto' => 'ASC'], 0, 1);
+        
+        if (!empty($taxes)) {
+            return $taxes[0]->codimpuesto;
+        }
+        
+        // Default tax codes based on common IVA percentages
+        $defaultTaxes = [
+            21.0 => 'IVA21',
+            10.0 => 'IVA10',
+            4.0 => 'IVA4',
+            0.0 => 'IVA0'
+        ];
+        
+        // Find closest match
+        $closestCode = 'IVA21'; // Default
+        $closestDiff = PHP_FLOAT_MAX;
+        
+        foreach ($defaultTaxes as $percentage => $code) {
+            $diff = abs($percentage - $ivaPercent);
+            if ($diff < $closestDiff) {
+                $closestDiff = $diff;
+                $closestCode = $code;
+            }
+        }
+        
+        return $closestCode;
     }
 
     protected function reportResults()
