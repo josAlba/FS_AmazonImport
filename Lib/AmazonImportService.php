@@ -6,11 +6,10 @@ use FacturaScripts\Core\Tools;
 use FacturaScripts\Dinamic\Model\FacturaCliente;
 use FacturaScripts\Dinamic\Model\Cliente;
 use FacturaScripts\Dinamic\Model\Producto;
-use FacturaScripts\Dinamic\Model\LineaFacturaCliente;
+use FacturaScripts\Dinamic\Model\Variante;
 use FacturaScripts\Dinamic\Model\Impuesto;
 use FacturaScripts\Core\Base\DataBase\DataBaseWhere;
 use FacturaScripts\Dinamic\Lib\BusinessDocumentCode;
-use FacturaScripts\Core\Lib\Calculator;
 use FacturaScripts\Plugins\AmazonImport\Model\AmazonRow;
 
 class AmazonImportService
@@ -47,13 +46,19 @@ class AmazonImportService
             return [];
         }
 
-        $headerLine = fgets($handle);
-        $headers = explode("\t", trim($headerLine));
+        $headers = fgetcsv($handle, 0, "\t");
+        if (false === $headers) {
+            fclose($handle);
+            Tools::log()->error('invalid-empty-file');
+            return [];
+        }
+
+        $headers = array_map('trim', $headers);
         $colMap = array_flip($headers);
 
         $orders = [];
-        while (($line = fgets($handle)) !== false) {
-            $data = explode("\t", trim($line));
+        while (($data = fgetcsv($handle, 0, "\t")) !== false) {
+            $data = array_map('trim', $data);
             if (count($data) < 5) {
                 continue;
             }
@@ -141,9 +146,15 @@ class AmazonImportService
         }
 
         foreach ($rows as $row) {
-            $this->createInvoiceLineFromRow($inv, $row);
+            if (false === $this->createInvoiceLineFromRow($inv, $row)) {
+                $this->skippedCount++;
+                return false;
+            }
         }
-        $this->addExtraShippingCosts($inv, $rows);
+        if (false === $this->addExtraShippingCosts($inv, $rows)) {
+            $this->skippedCount++;
+            return false;
+        }
         
         if ($this->finalizeInvoice($inv)) {
             $isNew ? $this->createdCount++ : $this->updatedCount++;
@@ -233,7 +244,7 @@ class AmazonImportService
         }
     }
 
-    protected function createInvoiceLineFromRow(FacturaCliente $inv, AmazonRow $row)
+    protected function createInvoiceLineFromRow(FacturaCliente $inv, AmazonRow $row): bool
     {
         $sku = $row->getSku();
         $qty = $row->getQuantity();
@@ -242,35 +253,43 @@ class AmazonImportService
 
         $product = $this->getOrCreateProductWithStock($sku, $row->getProductName(), $qty, $pvpUnitario, $ivaPercent);
 
-        $line = new LineaFacturaCliente();
-        $line->idfactura = $inv->idfactura;
-        $line->referencia = $product->referencia ?: $sku;
+        $line = $inv->getNewLine();
+        $line->actualizastock = 0;
+        $line->idproducto = null;
+        $line->referencia = $sku ?: $product->referencia;
         $line->descripcion = $row->getProductName() ?: ($product->descripcion ?: $sku);
         $line->cantidad = $qty;
         $line->pvpunitario = $pvpUnitario;
         $line->iva = $ivaPercent;
         $line->codimpuesto = $this->getTaxCodeFromPercentage($ivaPercent);
-        $line->save();
+        return $line->save();
     }
 
     protected function getOrCreateProductWithStock(string $sku, string $name, float $qty, float $netPrice, float $ivaPercent): Producto
     {
         $product = new Producto();
-        if (!empty($sku) && !$product->loadFromCode($sku)) {
+        if (empty($sku)) {
+            return $product;
+        }
+
+        $variant = new Variante();
+        if ($variant->loadWhereEq('referencia', $sku)) {
+            $product->load($variant->idproducto);
+            return $product;
+        }
+
+        if (!$product->loadWhereEq('referencia', $sku)) {
             $product->referencia = $sku;
             $product->descripcion = $name;
-            $product->pvp = $netPrice * (1 + ($ivaPercent / 100));
-            $product->stock = $qty;
+            $product->precio = $netPrice;
+            $product->stockfis = $qty;
             $product->codimpuesto = $this->getTaxCodeFromPercentage($ivaPercent);
-            $product->save();
-        } elseif ($product->referencia && $product->stock < $qty) {
-            $product->stock = $qty;
             $product->save();
         }
         return $product;
     }
 
-    protected function addExtraShippingCosts(FacturaCliente $inv, array $rows)
+    protected function addExtraShippingCosts(FacturaCliente $inv, array $rows): bool
     {
         $shipping = ['price' => 0, 'tax' => 0];
         $gift = ['price' => 0, 'tax' => 0];
@@ -282,16 +301,18 @@ class AmazonImportService
             $gift['tax'] += $row->getGiftWrapTax();
         }
 
-        if ($shipping['price'] > 0) {
-            $this->createExtraLine($inv, self::REF_SHIPPING, 'Transporte', $shipping);
+        if ($shipping['price'] > 0 && false === $this->createExtraLine($inv, self::REF_SHIPPING, 'Transporte', $shipping)) {
+            return false;
         }
 
-        if ($gift['price'] > 0) {
-            $this->createExtraLine($inv, self::REF_GIFTWRAP, 'Envoltorio para regalo', $gift);
+        if ($gift['price'] > 0 && false === $this->createExtraLine($inv, self::REF_GIFTWRAP, 'Envoltorio para regalo', $gift)) {
+            return false;
         }
+
+        return true;
     }
 
-    protected function createExtraLine(FacturaCliente $inv, string $ref, string $desc, array $costData)
+    protected function createExtraLine(FacturaCliente $inv, string $ref, string $desc, array $costData): bool
     {
         $price = $costData['price'];
         $tax = $costData['tax'];
@@ -302,23 +323,22 @@ class AmazonImportService
         // Calcular porcentaje de IVA
         $ivaPercent = ($tax > 0 && $net > 0) ? round(($tax / $net) * 100) : 21.0;
         
-        $line = new LineaFacturaCliente();
-        $line->idfactura = $inv->idfactura;
+        $line = $inv->getNewLine();
+        $line->actualizastock = 0;
         $line->referencia = $ref;
         $line->descripcion = $desc;
         $line->cantidad = 1;
         $line->pvpunitario = $net;
         $line->iva = $ivaPercent;
         $line->codimpuesto = $this->getTaxCodeFromPercentage($ivaPercent);
-        $line->save();
+        return $line->save();
     }
 
     protected function finalizeInvoice(FacturaCliente $inv): bool
     {
         // Recalcular totales usando Calculator
         $lines = $inv->getLines();
-        \FacturaScripts\Core\Lib\Calculator::calculate($inv, $lines, true);
-        return $inv->save();
+        return \FacturaScripts\Core\Lib\Calculator::calculate($inv, $lines, true);
     }
 
     protected function findOrCreateCustomer($email, $name, $phone): string
