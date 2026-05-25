@@ -245,7 +245,7 @@ class AmazonImportService
         $line = new LineaFacturaCliente();
         $line->idfactura = $inv->idfactura;
         $line->referencia = $product->referencia ?: $sku;
-        $line->descripcion = $product->descripcion ?: $row->getProductName();
+        $line->descripcion = $row->getProductName() ?: ($product->descripcion ?: $sku);
         $line->cantidad = $qty;
         $line->pvpunitario = $pvpUnitario;
         $line->iva = $ivaPercent;
