@@ -46,7 +46,7 @@ class AmazonImportService
             return [];
         }
 
-        $headers = fgetcsv($handle, 0, "\t");
+        $headers = fgetcsv($handle, 0, "\t", '"', "\\");
         if (false === $headers) {
             fclose($handle);
             Tools::log()->error('invalid-empty-file');
@@ -57,7 +57,7 @@ class AmazonImportService
         $colMap = array_flip($headers);
 
         $orders = [];
-        while (($data = fgetcsv($handle, 0, "\t")) !== false) {
+        while (($data = fgetcsv($handle, 0, "\t", '"', "\\")) !== false) {
             $data = array_map('trim', $data);
             if (count($data) < 5) {
                 continue;
